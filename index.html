@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#06040b">
+<style>
+  html, body { margin: 0; overscroll-behavior: none; }
+  [hidden] { display: none !important; }
+</style>
+<title>Garden Centipede</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap">
+<style>
+  /* Layout: one arcade screen centred in the viewport; cards float over the attract-mode playfield */
+  :root {
+    color-scheme: dark;
+    --void: #06040b;
+    --ink: #f3ecdc;
+    --dim: #9d92b4;
+    --moss: #8cff5a;
+    --cap: #ff5a3c;
+    --spore: #d9c8ff;
+    --panel: rgba(12, 7, 20, 0.92);
+    --edge: rgba(140, 255, 90, 0.3);
+    --display: "Press Start 2P", ui-monospace, Consolas, monospace;
+    --body: "VT323", ui-monospace, Consolas, monospace;
+  }
+  html, body { height: 100%; }
+  body {
+    background: var(--void);
+    color: var(--ink);
+    overflow: hidden;
+    font-family: var(--body);
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #stage { position: relative; height: 100%; width: 100%; box-sizing: border-box; display: grid; place-items: center; }
+  #screen { position: relative; }
+  canvas {
+    display: block; width: 100%; height: 100%;
+    background: #000;
+    border-radius: 3px;
+    box-shadow: 0 0 0 1px var(--edge), 0 0 48px rgba(140, 255, 90, 0.07);
+  }
+  #corner { position: absolute; top: 8px; right: 8px; display: flex; gap: 8px; z-index: 3; }
+  #corner button {
+    font: 9px/1 var(--display); letter-spacing: 0.06em;
+    color: var(--dim); background: transparent;
+    border: 1px solid rgba(157, 146, 180, 0.35); border-radius: 3px;
+    padding: 8px 9px; cursor: pointer;
+  }
+  #corner button:hover { color: var(--ink); border-color: var(--ink); }
+  button:focus-visible { outline: 2px solid var(--moss); outline-offset: 2px; }
+
+  #overlay { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; box-sizing: border-box; z-index: 2; pointer-events: none; }
+  .card {
+    pointer-events: auto;
+    width: min(440px, 100%);
+    max-height: calc(100% - 8px); overflow: auto;
+    box-sizing: border-box;
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    border-radius: 4px;
+    padding: 22px 22px 18px;
+    display: grid; gap: 14px;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+  }
+  .card h1, .card h2 { margin: 0; font-family: var(--display); font-weight: 400; text-wrap: balance; }
+  .card h1 { font-size: 20px; line-height: 1.5; color: var(--moss); }
+  .card h1 span { color: var(--cap); }
+  .card h2 { font-size: 16px; line-height: 1.5; color: var(--cap); }
+  .sub { margin: 0; font-size: 21px; line-height: 1.1; color: var(--ink); }
+  .pts { width: 100%; border-collapse: collapse; font-size: 20px; line-height: 1.05; font-variant-numeric: tabular-nums; }
+  .pts td { padding: 2px 0; border-bottom: 1px dashed rgba(157, 146, 180, 0.22); }
+  .pts td:last-child { text-align: right; color: var(--spore); white-space: nowrap; padding-left: 10px; }
+  .pts small { color: var(--dim); font-size: 17px; }
+  .keys { margin: 0; font-size: 18px; line-height: 1.15; color: var(--dim); }
+  .keys b { color: var(--ink); font-weight: 400; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .hi { font-family: var(--display); font-size: 9px; color: var(--dim); letter-spacing: 0.06em; }
+  .hi b { color: var(--ink); font-weight: 400; }
+  .go {
+    font: 12px/1 var(--display); letter-spacing: 0.08em;
+    color: #0b1206; background: var(--moss);
+    border: 0; border-radius: 3px; padding: 13px 18px; cursor: pointer;
+    box-shadow: 0 3px 0 #3f8a1f;
+  }
+  .go:hover { filter: brightness(1.08); }
+  .go:active { transform: translateY(2px); box-shadow: 0 1px 0 #3f8a1f; }
+  .big { margin: 0; font-size: 26px; }
+  .big b { font-family: var(--display); font-weight: 400; font-size: 18px; color: var(--moss); }
+  #newHi { margin: 0; font-family: var(--display); font-size: 10px; color: var(--cap); }
+  #stage.touch .keys.desk { display: none; }
+  #stage:not(.touch) .keys.tap { display: none; }
+  @media (prefers-reduced-motion: reduce) { .go:active { transform: none; } }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="screen"><canvas id="game" aria-label="Garden Centipede playfield"></canvas></div>
+  <div id="corner">
+    <button id="pauseBtn" type="button" hidden>PAUSE</button>
+    <button id="muteBtn" type="button">SOUND ON</button>
+  </div>
+  <div id="overlay">
+    <div class="card" id="titleCard">
+      <h1>GARDEN<br><span>CENTIPEDE</span></h1>
+      <p class="sub">A centipede is winding down through the mushroom patch. Shoot it apart before it reaches the bottom of the garden.</p>
+      <table class="pts">
+        <tr><td>Head</td><td>100</td></tr>
+        <tr><td>Body segment</td><td>10</td></tr>
+        <tr><td>Spider <small>(closer is worth more)</small></td><td>300 / 600 / 900</td></tr>
+        <tr><td>Flea <small>(takes 2 hits)</small></td><td>200</td></tr>
+        <tr><td>Scorpion <small>(poisons mushrooms)</small></td><td>1000</td></tr>
+        <tr><td>Mushroom</td><td>1</td></tr>
+        <tr><td>Mushroom restored after a lost life</td><td>5</td></tr>
+      </table>
+      <p class="keys desk"><b>Move</b> arrows, WASD or the mouse &nbsp; <b>Fire</b> Space or click &nbsp; <b>P</b> pause &nbsp; <b>M</b> sound. Click the field to lock the mouse for trackball-style steering.</p>
+      <p class="keys tap"><b>Drag</b> anywhere to steer, like a trackball. <b>Keep a finger down</b> to fire.</p>
+      <div class="row">
+        <button class="go" id="startBtn" type="button">START</button>
+        <span class="hi">HIGH SCORE <b id="hiTitle">0</b> · BONUS LIFE EVERY 12,000</span>
+      </div>
+    </div>
+    <div class="card" id="overCard" hidden>
+      <h2>GAME OVER</h2>
+      <p class="big">Score <b id="finalScore">0</b></p>
+      <p id="newHi" hidden>NEW HIGH SCORE</p>
+      <div class="row">
+        <button class="go" id="againBtn" type="button">PLAY AGAIN</button>
+        <span class="hi">REACHED WAVE <b id="finalWave">1</b></span>
+      </div>
+    </div>
+    <div class="card" id="pauseCard" hidden>
+      <h2>PAUSED</h2>
+      <p class="keys desk">Press P or click Resume.</p>
+      <div class="row"><button class="go" id="resumeBtn" type="button">RESUME</button></div>
+    </div>
+  </div>
+</div>
+<script>
+(() => {
+  'use strict';
+  const CELL = 16, COLS = 30, ROWS = 32, W = COLS * CELL, H = ROWS * CELL;
+  const ZT = 26;              // first row of the player's zone at the bottom of the garden
+  const TAU = Math.PI * 2;
+
+  const stage = document.getElementById('stage');
+  const screenEl = document.getElementById('screen');
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const titleCard = document.getElementById('titleCard');
+  const overCard = document.getElementById('overCard');
+  const pauseCard = document.getElementById('pauseCard');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const muteBtn = document.getElementById('muteBtn');
+
+  const isTouch = window.matchMedia('(pointer: coarse)').matches;
+  if (isTouch) stage.classList.add('touch');
+
+  // Each wave repaints the garden, as the arcade machine did
+  const PALETTES = [
+    { cap: '#ff4b3a', rim: '#3fe3ff', body: '#5cff7a', head: '#ffe14a', spider: '#ff4fd8', flea: '#ffa53d' },
+    { cap: '#3fe3ff', rim: '#ff4fd8', body: '#ff7a3d', head: '#fff35a', spider: '#9cff4f', flea: '#ffe14a' },
+    { cap: '#ffd23f', rim: '#ff3d6e', body: '#4fb6ff', head: '#ff9a3d', spider: '#46ffd0', flea: '#ff4fd8' },
+    { cap: '#ff4fd8', rim: '#ffd23f', body: '#46ffd0', head: '#ffffff', spider: '#ff7a3d', flea: '#3fe3ff' },
+    { cap: '#9cff4f', rim: '#7a6bff', body: '#ff4b6e', head: '#ffe14a', spider: '#3fe3ff', flea: '#ff9a3d' },
+    { cap: '#ff8a3d', rim: '#46ffd0', body: '#c08bff', head: '#9cff4f', spider: '#ffe14a', flea: '#ff4b6e' },
+    { cap: '#5a8bff', rim: '#ff8a3d', body: '#ffe14a', head: '#ff4fd8', spider: '#9cff4f', flea: '#46ffd0' },
+    { cap: '#ff3d6e', rim: '#9cff4f', body: '#3fe3ff', head: '#ffd23f', spider: '#ff8a3d', flea: '#ffffff' },
+  ];
+  const POISON = { cap: '#e9e0ff', rim: '#7a4dff' };
+  const INK = '#f3ecdc', DIM = '#9d92b4';
+
+  // ---------- state ----------
+  const mhp = new Uint8Array(COLS * ROWS);   // mushroom hit points, 0 = none
+  const mpo = new Uint8Array(COLS * ROWS);   // poisoned by a scorpion
+  let cents = [], pal = PALETTES[0];
+  let state = 'title', paused = false, frame = 0;
+  let score = 0, hi = 0, lives = 2, nextLife = 12000, wave = 1;
+  let px = W / 2, py = H - 12, bullet = null;
+  let spider = null, flea = null, scorpion = null;
+  let spiderTimer = 0, fleaTimer = 0, scorpTimer = 0, headTimer = 0, zoneReached = false;
+  let deathT = 0, restoreList = [], restoreT = 0, bannerT = 0, beatT = 0, beatAlt = false;
+  let particles = [], popups = [], ring = null;
+
+  try { hi = parseInt(localStorage.getItem('garden-centipede-hi') || '0', 10) || 0; } catch (e) {}
+  document.getElementById('hiTitle').textContent = hi;
+
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const irnd = (a, b) => Math.floor(rnd(a, b + 1));
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+
+  // ---------- audio ----------
+  let ac = null, master = null, noiseBuf = null, muted = false, voices = null;
+  try { muted = localStorage.getItem('garden-centipede-muted') === '1'; } catch (e) {}
+  function initAudio() {
+    if (ac) { if (ac.state === 'suspended' && !paused) ac.resume(); return; }
+    try {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      master = ac.createGain();
+      master.gain.value = muted ? 0 : 0.55;
+      master.connect(ac.destination);
+      noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+      const d = noiseBuf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      const mk = type => {
+        const o = ac.createOscillator(), g = ac.createGain();
+        o.type = type; g.gain.value = 0; o.connect(g); g.connect(master); o.start();
+        return { o, g };
+      };
+      voices = { spider: mk('square'), flea: mk('triangle'), scorp: mk('sawtooth') };
+    } catch (e) { ac = null; }
+  }
+  function tone(f0, f1, dur, type, vol, when) {
+    if (!ac) return;
+    const t = ac.currentTime + (when || 0);
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type || 'square';
+    o.frequency.setValueAtTime(f0, t);
+    if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + dur + 0.03);
+  }
+  function noise(dur, vol, freq) {
+    if (!ac) return;
+    const t = ac.currentTime;
+    const s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+    s.buffer = noiseBuf; f.type = 'lowpass'; f.frequency.value = freq;
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(f); f.connect(g); g.connect(master);
+    s.start(t); s.stop(t + dur + 0.03);
+  }
+  const sfx = {
+    shot: () => tone(2200, 520, 0.06, 'square', 0.03),
+    mush: () => tone(340, 220, 0.03, 'triangle', 0.06),
+    kill: () => { noise(0.14, 0.22, 2400); tone(260, 60, 0.12, 'square', 0.05); },
+    big: () => { noise(0.35, 0.3, 1600); tone(900, 120, 0.3, 'square', 0.05); },
+    fleaHit: () => tone(600, 1400, 0.08, 'square', 0.05),
+    death: () => { noise(1.1, 0.45, 900); tone(520, 40, 1.0, 'sawtooth', 0.09); },
+    tick: () => tone(1250, 1250, 0.035, 'square', 0.04),
+    life: () => [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, f, 0.1, 'square', 0.05, i * 0.07)),
+    wave: () => [330, 440, 554].forEach((f, i) => tone(f, f, 0.08, 'triangle', 0.08, i * 0.06)),
+    beat: hiNote => tone(hiNote ? 150 : 112, hiNote ? 140 : 104, 0.07, 'square', 0.05),
+  };
+  function setVoice(v, on, freq, vol) {
+    if (!voices) return;
+    const t = ac.currentTime;
+    voices[v].g.gain.setTargetAtTime(on ? vol : 0, t, 0.02);
+    if (on) voices[v].o.frequency.setTargetAtTime(freq, t, 0.015);
+  }
+  function setMuted(m) {
+    muted = m;
+    muteBtn.textContent = muted ? 'SOUND OFF' : 'SOUND ON';
+    if (master) master.gain.setTargetAtTime(muted ? 0 : 0.55, ac.currentTime, 0.02);
+    try { localStorage.setItem('garden-centipede-muted', muted ? '1' : '0'); } catch (e) {}
+  }
+  setMuted(muted);
+
+  // ---------- layout ----------
+  let scale = 1;
+  function fit() {
+    const w = window.innerWidth, h = stage.clientHeight || window.innerHeight;
+    let s = Math.min((w - 16) / W, (h - 16) / H);
+    let reserve = 0;
+    // Leave room above the screen for the corner buttons when there is no spare space at the sides
+    if ((w - W * s) / 2 < 190) { reserve = 44; s = Math.min((w - 16) / W, (h - 16 - reserve) / H); }
+    scale = Math.max(0.3, s);
+    stage.style.paddingTop = reserve ? reserve + 'px' : '';
+    screenEl.style.width = Math.round(W * scale) + 'px';
+    screenEl.style.height = Math.round(H * scale) + 'px';
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    canvas.width = Math.round(W * scale * dpr);
+    canvas.height = Math.round(H * scale * dpr);
+    ctx.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0);
+  }
+  window.addEventListener('resize', fit);
+
+  // ---------- mushrooms ----------
+  function seedMushrooms() {
+    mhp.fill(0); mpo.fill(0);
+    const n = 52;
+    for (let placed = 0; placed < n;) {
+      const x = irnd(0, COLS - 1), y = irnd(2, ROWS - 3);
+      if (y >= ROWS - 3 && Math.abs(x - COLS / 2) < 3) continue;
+      const i = y * COLS + x;
+      if (mhp[i]) continue;
+      mhp[i] = 4; placed++;
+    }
+  }
+  function zoneMushrooms() {
+    let n = 0;
+    for (let i = ZT * COLS; i < ROWS * COLS; i++) if (mhp[i]) n++;
+    return n;
+  }
+
+  // ---------- centipede ----------
+  // A centipede is a head that walks cell to cell; path[k] is where segment k is coming from,
+  // and segment k is heading for path[k-1] (or the head's target), all at the same phase p.
+  function segPos(c, k) {
+    const a = c.path[k], b = k ? c.path[k - 1] : c.target, t = c.p / c.fpc;
+    return { x: (a.x + (b.x - a.x) * t) * CELL + CELL / 2, y: (a.y + (b.y - a.y) * t) * CELL + CELL / 2, dx: b.x - a.x, dy: b.y - a.y };
+  }
+  function nextCell(s) {
+    let { x, y, dir, vdir, dive } = s;
+    if (y >= ZT) zoneReached = true;
+    if (y < 1) return { x, y: y + 1, dir, vdir, dive: false };
+    if (dive) {
+      if (y < ROWS - 1) return { x, y: y + 1, dir, vdir: 1, dive: true };
+      vdir = -1;
+    }
+    const nx = x + dir;
+    if (x < 0 || x >= COLS) return { x: nx, y, dir, vdir, dive: false };  // still walking in from the side
+    if (nx >= 0 && nx < COLS) {
+      const i = y * COLS + nx;
+      if (!mhp[i]) return { x: nx, y, dir, vdir, dive: false };
+      if (mpo[i] && y < ROWS - 1) return { x, y: y + 1, dir: -dir, vdir: 1, dive: true };
+    }
+    let ny = y + vdir;
+    if (ny > ROWS - 1) { vdir = -1; ny = y - 1; }
+    else if (vdir < 0 && ny < ZT) { vdir = 1; ny = y + 1; }
+    return { x, y: ny, dir: -dir, vdir, dive: false };
+  }
+  function stepCent(c) {
+    if (++c.p >= c.fpc) {
+      c.p = 0;
+      c.path.unshift(c.target);
+      c.path.pop();
+      c.target = nextCell(c.path[0]);
+    }
+  }
+  function makeEntering(col, len, dir, delay, fpc) {
+    const path = [];
+    for (let k = 0; k < len; k++) path.push({ x: col, y: -delay - k, dir, vdir: 1, dive: false });
+    return { path, target: { x: col, y: -delay + 1, dir, vdir: 1, dive: false }, p: 0, fpc };
+  }
+  function spawnWave() {
+    cents = [];
+    zoneReached = false;
+    headTimer = 420;
+    pal = PALETTES[(wave - 1) % PALETTES.length];
+    const heads = Math.min(wave - 1, 8);
+    const fast = wave >= 4 ? 6 : 8;
+    cents.push(makeEntering(14, 12 - heads, Math.random() < 0.5 ? 1 : -1, 0, 8));
+    for (let i = 0; i < heads; i++) {
+      cents.push(makeEntering(irnd(2, COLS - 3), 1, Math.random() < 0.5 ? 1 : -1, 2 + i * 2, fast));
+    }
+    bannerT = 100;
+  }
+  function segmentCount() { let n = 0; for (const c of cents) n += c.path.length; return n; }
+  function spawnSideHead() {
+    const fromLeft = Math.random() < 0.5, dir = fromLeft ? 1 : -1;
+    const x = fromLeft ? -1 : COLS, y = irnd(ZT, ROWS - 2);
+    cents.push({ path: [{ x, y, dir, vdir: 1, dive: false }], target: { x: x + dir, y, dir, vdir: 1, dive: false }, p: 0, fpc: 6 });
+  }
+  function hitSegment(ci, k) {
+    const c = cents[ci], old = c.path, pos = segPos(c, k);
+    const mx = Math.floor(pos.x / CELL), my = Math.floor(pos.y / CELL);
+    if (mx >= 0 && mx < COLS && my >= 1 && my < ROWS) {
+      const i = my * COLS + mx;
+      if (!mhp[i]) { mhp[i] = 4; mpo[i] = 0; }
+    }
+    addScore(k === 0 ? 100 : 10);
+    burst(pos.x, pos.y, k === 0 ? pal.head : pal.body, 12);
+    sfx.kill();
+    const parts = [];
+    if (k > 0) { c.path = old.slice(0, k); parts.push(c); }
+    const back = old.slice(k + 1);
+    if (back.length) {
+      let target = { ...old[k] };
+      // If the new mushroom sits right where the new head was going, it turns and drops instead
+      if (target.x >= 0 && target.x < COLS && target.y >= 1 && mhp[target.y * COLS + target.x] && target.y === back[0].y) {
+        target = nextCell(back[0]);
+      }
+      parts.push({ path: back, target, p: c.p, fpc: c.fpc });
+    }
+    cents.splice(ci, 1, ...parts);
+  }
+
+  // ---------- scoring & effects ----------
+  function addScore(n) {
+    score += n;
+    if (score >= nextLife) {
+      nextLife += 12000;
+      if (lives < 6) { lives++; sfx.life(); }
+    }
+  }
+  function burst(x, y, color, n) {
+    for (let i = 0; i < n; i++) {
+      const a = rnd(0, TAU), v = rnd(0.6, 2.6);
+      particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: irnd(14, 28), color });
+    }
+  }
+  function popup(x, y, text) { popups.push({ x, y, text, life: 60 }); }
+
+  // ---------- player ----------
+  function blockedAt(x, y) {
+    const l = x - 5, r = x + 5, t = y - 6, b = y + 6;
+    for (let cy = Math.floor(t / CELL); cy <= Math.floor((b - 0.01) / CELL); cy++) {
+      for (let cx = Math.floor(l / CELL); cx <= Math.floor((r - 0.01) / CELL); cx++) {
+        if (cx < 0 || cx >= COLS || cy < 0 || cy >= ROWS || !mhp[cy * COLS + cx]) continue;
+        const ml = cx * CELL + 2, mr = ml + 12, mt = cy * CELL + 2, mb = mt + 12;
+        if (r > ml && l < mr && b > mt && t < mb) return true;
+      }
+    }
+    return false;
+  }
+  function movePlayer(dx, dy) {
+    const steps = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)));
+    if (!steps) return;
+    const sx = dx / steps, sy = dy / steps;
+    for (let i = 0; i < steps; i++) {
+      const nx = clamp(px + sx, 6, W - 6);
+      if (!blockedAt(nx, py) || blockedAt(px, py)) px = nx;
+      const ny = clamp(py + sy, ZT * CELL + 7, H - 7);
+      if (!blockedAt(px, ny) || blockedAt(px, py)) py = ny;
+    }
+  }
+  function resetPlayer() {
+    px = W / 2; py = H - 12;
+    for (let y = ROWS - 2; y < ROWS; y++) for (let x = 13; x <= 16; x++) { mhp[y * COLS + x] = 0; mpo[y * COLS + x] = 0; }
+  }
+
+  // ---------- input ----------
+  const keys = new Set();
+  let mdx = 0, mdy = 0, mouseFire = false, mouseMode = false, mtx = W / 2, mty = H - 12;
+  const touches = new Map();
+  let wasLocked = false;
+
+  function toLogical(e) {
+    const r = canvas.getBoundingClientRect();
+    return { x: (e.clientX - r.left) / scale, y: (e.clientY - r.top) / scale };
+  }
+  window.addEventListener('keydown', e => {
+    const k = e.code;
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(k)) e.preventDefault();
+    initAudio();
+    if (k === 'KeyM') { setMuted(!muted); return; }
+    if (k === 'KeyP' || k === 'Escape') { if (state !== 'title' && state !== 'over') togglePause(); return; }
+    if ((k === 'Enter' || k === 'Space') && !e.repeat) {
+      if (state === 'title' || (state === 'over' && !overCard.hidden)) { newGame(); return; }
+      if (paused && k === 'Enter') { togglePause(); return; }
+    }
+    keys.add(k);
+    if (/^(Arrow|Key[WASD])/.test(k)) mouseMode = false;
+  });
+  window.addEventListener('keyup', e => keys.delete(e.code));
+  window.addEventListener('blur', () => { keys.clear(); mouseFire = false; touches.clear(); });
+
+  stage.addEventListener('pointerdown', e => {
+    initAudio();
+    if (e.target.closest('button, .card')) return;
+    if (e.pointerType === 'touch') {
+      e.preventDefault();
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      return;
+    }
+    if (e.button !== 0) return;
+    mouseFire = true;
+    if (state === 'play' && !paused && document.pointerLockElement !== canvas && canvas.requestPointerLock) {
+      try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (err) {}
+    }
+  });
+  stage.addEventListener('pointermove', e => {
+    if (e.pointerType === 'touch') {
+      const t = touches.get(e.pointerId);
+      if (!t) return;
+      mdx += (e.clientX - t.x) / scale * 1.4;
+      mdy += (e.clientY - t.y) / scale * 1.4;
+      t.x = e.clientX; t.y = e.clientY;
+      return;
+    }
+    if (document.pointerLockElement === canvas) {
+      mdx += e.movementX / scale * 0.8;
+      mdy += e.movementY / scale * 0.8;
+    } else {
+      const p = toLogical(e);
+      if (p.x >= 0 && p.x <= W && p.y >= 0 && p.y <= H) { mouseMode = true; mtx = p.x; mty = p.y; }
+    }
+  });
+  const endPointer = e => {
+    if (e.pointerType === 'touch') touches.delete(e.pointerId);
+    else mouseFire = false;
+  };
+  stage.addEventListener('pointerup', endPointer);
+  stage.addEventListener('pointercancel', endPointer);
+  document.addEventListener('pointerlockchange', () => {
+    const locked = document.pointerLockElement === canvas;
+    if (!locked && wasLocked && state === 'play' && !paused) togglePause();
+    wasLocked = locked;
+  });
+
+  // ---------- game flow ----------
+  function showCard(card) {
+    for (const c of [titleCard, overCard, pauseCard]) c.hidden = c !== card;
+  }
+  function newGame() {
+    initAudio();
+    score = 0; lives = 2; nextLife = 12000; wave = 1;
+    seedMushrooms(); resetPlayer();
+    clearEnemies();
+    particles = []; popups = []; ring = null; bullet = null;
+    spawnWave();
+    state = 'play'; paused = false;
+    showCard(null);
+    pauseBtn.hidden = false;
+    sfx.wave();
+  }
+  function clearEnemies() {
+    spider = null; flea = null; scorpion = null;
+    spiderTimer = irnd(180, 300); fleaTimer = 120; scorpTimer = irnd(400, 800);
+  }
+  function togglePause() {
+    if (state === 'title' || state === 'over') return;
+    paused = !paused;
+    showCard(paused ? pauseCard : null);
+    pauseBtn.textContent = paused ? 'RESUME' : 'PAUSE';
+    if (ac) { if (paused) ac.suspend(); else ac.resume(); }
+    if (paused && document.pointerLockElement === canvas) { wasLocked = false; document.exitPointerLock(); }
+    keys.clear(); mouseFire = false;
+  }
+  function killPlayer() {
+    state = 'dying';
+    deathT = 110;
+    bullet = null;
+    burst(px, py, INK, 26); burst(px, py, pal.rim, 18);
+    ring = { x: px, y: py, r: 4 };
+    sfx.death();
+    if (document.pointerLockElement === canvas) { wasLocked = false; document.exitPointerLock(); }
+  }
+  function beginRestore() {
+    cents = []; spider = null; flea = null; scorpion = null;
+    restoreList = [];
+    for (let i = COLS; i < COLS * ROWS; i++) if (mhp[i] && (mhp[i] < 4 || mpo[i])) restoreList.push(i);
+    state = 'restore'; restoreT = 0;
+  }
+  function afterRestore() {
+    if (lives <= 0) { gameOver(); return; }
+    lives--;
+    resetPlayer(); clearEnemies(); bullet = null;
+    spawnWave();
+    state = 'play';
+  }
+  function gameOver() {
+    state = 'over';
+    pauseBtn.hidden = true;
+    const isHi = score > hi;
+    if (isHi) { hi = score; try { localStorage.setItem('garden-centipede-hi', String(hi)); } catch (e) {} }
+    document.getElementById('hiTitle').textContent = hi;
+    document.getElementById('finalScore').textContent = score;
+    document.getElementById('finalWave').textContent = wave;
+    document.getElementById('newHi').hidden = !isHi;
+    // Let the garden settle for a moment before the card comes up
+    setTimeout(() => { if (state === 'over') { showCard(overCard); document.getElementById('againBtn').focus(); } }, 900);
+    spawnWave();
+  }
+
+  // ---------- update ----------
+  function bulletHits(x, y) {
+    for (let ci = 0; ci < cents.length; ci++) {
+      const c = cents[ci];
+      for (let k = 0; k < c.path.length; k++) {
+        const s = segPos(c, k);
+        if (Math.abs(s.x - x) < 7 && Math.abs(s.y - y) < 7) { hitSegment(ci, k); return true; }
+      }
+    }
+    if (flea && Math.abs(flea.x - x) < 6 && Math.abs(flea.y - y) < 8) {
+      if (--flea.hp > 0) { flea.vy = 9; sfx.fleaHit(); }
+      else { addScore(200); burst(flea.x, flea.y, pal.flea, 14); sfx.big(); popup(flea.x, flea.y, '200'); flea = null; }
+      return true;
+    }
+    if (spider && Math.abs(spider.x - x) < 9 && Math.abs(spider.y - y) < 7) {
+      const d = Math.abs(spider.y - py);
+      const pts = d < 28 ? 900 : d < 60 ? 600 : 300;
+      addScore(pts); popup(spider.x, spider.y, String(pts));
+      burst(spider.x, spider.y, pal.spider, 18); sfx.big();
+      spider = null; spiderTimer = irnd(120, 300);
+      return true;
+    }
+    if (scorpion && Math.abs(scorpion.x - x) < 11 && Math.abs(scorpion.y - y) < 7) {
+      addScore(1000); popup(scorpion.x, scorpion.y, '1000');
+      burst(scorpion.x, scorpion.y, '#7dd3ff', 18); sfx.big();
+      scorpion = null; scorpTimer = irnd(600, 1100);
+      return true;
+    }
+    const cx = Math.floor(x / CELL), cy = Math.floor(y / CELL);
+    if (cx >= 0 && cx < COLS && cy >= 1 && cy < ROWS) {
+      const i = cy * COLS + cx;
+      // Only the part of the mushroom that is still standing can stop a shot
+      if (mhp[i] && y - cy * CELL < mhp[i] * 4) {
+        if (--mhp[i] === 0) { mpo[i] = 0; addScore(1); burst(cx * CELL + 8, cy * CELL + 6, pal.cap, 5); }
+        sfx.mush();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function updatePlay() {
+    // movement
+    let kx = 0, ky = 0;
+    if (keys.has('ArrowLeft') || keys.has('KeyA')) kx -= 1;
+    if (keys.has('ArrowRight') || keys.has('KeyD')) kx += 1;
+    if (keys.has('ArrowUp') || keys.has('KeyW')) ky -= 1;
+    if (keys.has('ArrowDown') || keys.has('KeyS')) ky += 1;
+    let dx = kx * 3.4 + clamp(mdx, -26, 26), dy = ky * 3.4 + clamp(mdy, -26, 26);
+    mdx = 0; mdy = 0;
+    if (mouseMode && !kx && !ky && document.pointerLockElement !== canvas) {
+      dx += clamp(mtx - px, -6, 6);
+      dy += clamp(mty - py, -6, 6);
+    }
+    movePlayer(dx, dy);
+
+    // fire: one shot on screen at a time, refired as soon as it lands
+    const firing = keys.has('Space') || keys.has('KeyZ') || keys.has('KeyJ') || mouseFire || touches.size > 0;
+    if (firing && !bullet) { bullet = { x: px, y: py - 8 }; sfx.shot(); }
+    if (bullet) {
+      for (let s = 0; s < 4; s++) {
+        bullet.y -= 4.5;
+        if (bullet.y < CELL) { bullet = null; break; }
+        if (bulletHits(bullet.x, bullet.y)) { bullet = null; break; }
+      }
+    }
+
+    for (const c of cents) stepCent(c);
+
+    // reinforcements once the centipede has reached the bottom
+    if (zoneReached && --headTimer <= 0) {
+      headTimer = Math.max(160, 420 - wave * 25);
+      if (segmentCount() < 22) spawnSideHead();
+    }
+
+    updateSpider(); updateFlea(); updateScorpion();
+
+    // collisions with the player
+    for (const c of cents) {
+      for (let k = 0; k < c.path.length; k++) {
+        const s = segPos(c, k);
+        if (Math.abs(s.x - px) < 10 && Math.abs(s.y - py) < 11) { killPlayer(); return; }
+      }
+    }
+    if (spider && Math.abs(spider.x - px) < 12 && Math.abs(spider.y - py) < 10) { killPlayer(); return; }
+    if (flea && Math.abs(flea.x - px) < 8 && Math.abs(flea.y - py) < 12) { killPlayer(); return; }
+
+    // the centipede's footsteps
+    if (cents.length && --beatT <= 0) { beatT = 15; beatAlt = !beatAlt; sfx.beat(beatAlt); }
+
+    if (!cents.length) { wave++; spawnWave(); sfx.wave(); }
+  }
+
+  function updateSpider() {
+    if (!spider) {
+      if (--spiderTimer <= 0) {
+        const fromLeft = Math.random() < 0.5;
+        spider = {
+          x: fromLeft ? -12 : W + 12, y: rnd((ZT - 2) * CELL, H - 20),
+          vx: (fromLeft ? 1 : -1) * Math.min(1.1 + wave * 0.08, 2), vy: (Math.random() < 0.5 ? -1 : 1) * 2.1,
+          walk: true, t: 0,
+        };
+      }
+      return;
+    }
+    const s = spider;
+    s.t++;
+    s.y += s.vy;
+    if (s.y < (ZT - 4) * CELL) s.vy = Math.abs(s.vy);
+    if (s.y > H - 9) s.vy = -Math.abs(s.vy);
+    if (Math.random() < 0.02) s.vy = -s.vy;
+    if (Math.random() < 0.012) s.walk = !s.walk;
+    if (s.walk || s.x < 8 || s.x > W - 8) s.x += s.vx;
+    const cx = Math.floor(s.x / CELL), cy = Math.floor(s.y / CELL);
+    if (cx >= 0 && cx < COLS && cy >= 1 && cy < ROWS && mhp[cy * COLS + cx] && Math.random() < 0.06) {
+      mhp[cy * COLS + cx] = 0; mpo[cy * COLS + cx] = 0;
+    }
+    if ((s.vx > 0 && s.x > W + 14) || (s.vx < 0 && s.x < -14)) { spider = null; spiderTimer = irnd(90, 260); }
+  }
+  function updateFlea() {
+    if (!flea) {
+      if (wave >= 2 && --fleaTimer <= 0) {
+        fleaTimer = 30;
+        if (zoneMushrooms() < 3 + Math.min(wave, 6) && Math.random() < 0.25) {
+          flea = { x: irnd(0, COLS - 1) * CELL + CELL / 2, y: 4, vy: 3.2, hp: 2 };
+        }
+      }
+      return;
+    }
+    const r0 = Math.floor(flea.y / CELL);
+    flea.y += flea.vy;
+    const r1 = Math.floor(flea.y / CELL);
+    if (r1 !== r0 && r1 >= 2 && r1 < ROWS - 1 && flea.hp === 2 && Math.random() < 0.3) {
+      const cx = Math.floor(flea.x / CELL), i = r1 * COLS + cx;
+      const nearPlayer = Math.abs(cx * CELL + 8 - px) < 16 && Math.abs(r1 * CELL + 8 - py) < 18;
+      if (!mhp[i] && !nearPlayer) { mhp[i] = 4; mpo[i] = 0; }
+    }
+    if (flea.y > H + 10) { flea = null; fleaTimer = 90; }
+  }
+  function updateScorpion() {
+    if (!scorpion) {
+      if (wave >= 3 && --scorpTimer <= 0) {
+        const fromLeft = Math.random() < 0.5;
+        scorpion = { x: fromLeft ? -14 : W + 14, y: irnd(3, ZT - 8) * CELL + CELL / 2, vx: (fromLeft ? 1 : -1) * Math.min(1.1 + wave * 0.06, 2) };
+      }
+      return;
+    }
+    scorpion.x += scorpion.vx;
+    const cx = Math.floor(scorpion.x / CELL), cy = Math.floor(scorpion.y / CELL);
+    if (cx >= 0 && cx < COLS && mhp[cy * COLS + cx]) mpo[cy * COLS + cx] = 1;
+    if ((scorpion.vx > 0 && scorpion.x > W + 16) || (scorpion.vx < 0 && scorpion.x < -16)) { scorpion = null; scorpTimer = irnd(500, 1000); }
+  }
+
+  function update() {
+    frame++;
+    if (state === 'play') updatePlay();
+    else if (state === 'dying') { if (--deathT <= 0) beginRestore(); }
+    else if (state === 'restore') {
+      if (++restoreT % 4 === 0) {
+        const i = restoreList.shift();
+        if (i === undefined) afterRestore();
+        else { mhp[i] = 4; mpo[i] = 0; addScore(5); sfx.tick(); burst((i % COLS) * CELL + 8, Math.floor(i / COLS) * CELL + 6, INK, 4); }
+      }
+    } else {
+      // attract mode on the title and game-over screens
+      for (const c of cents) stepCent(c);
+      if (zoneReached && frame % 240 === 0 && segmentCount() < 14) spawnSideHead();
+    }
+
+    for (const p of particles) { p.x += p.vx; p.y += p.vy; p.vx *= 0.94; p.vy *= 0.94; p.life--; }
+    particles = particles.filter(p => p.life > 0);
+    for (const p of popups) { p.y -= 0.3; p.life--; }
+    popups = popups.filter(p => p.life > 0);
+    if (ring) { ring.r += 2.2; if (ring.r > 90) ring = null; }
+    if (bannerT > 0) bannerT--;
+
+    // continuous voices for the spider, flea and scorpion
+    if (voices) {
+      const live = state === 'play';
+      setVoice('spider', live && spider, 420 + Math.sin(frame * 0.35) * 160 + (spider ? spider.y * 0.2 : 0), 0.035);
+      setVoice('flea', live && flea, flea ? 1700 - flea.y * 2.6 : 400, 0.06);
+      setVoice('scorp', live && scorpion, (frame >> 3) % 2 ? 190 : 150, 0.03);
+    }
+  }
+
+  // ---------- drawing ----------
+  function drawMushroom(cx, cy, hp, poison) {
+    const x = cx * CELL, y = cy * CELL;
+    const capC = poison ? POISON.cap : pal.cap, rimC = poison ? POISON.rim : pal.rim;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(x, y, CELL, hp * 4); ctx.clip();
+    ctx.fillStyle = '#efe2cc';
+    ctx.fillRect(x + 5, y + 10, 6, 5);
+    ctx.fillStyle = rimC;
+    ctx.fillRect(x + 1, y + 9, 14, 2);
+    ctx.fillStyle = capC;
+    ctx.beginPath(); ctx.ellipse(x + 8, y + 9, 7, 7.5, 0, Math.PI, 0); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = rimC;
+    ctx.beginPath();
+    ctx.arc(x + 5, y + 5.5, 1.6, 0, TAU);
+    ctx.arc(x + 10.5, y + 4, 1.3, 0, TAU);
+    ctx.moveTo(x + 11, y + 7.5);
+    ctx.arc(x + 10, y + 7.5, 1, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+  }
+  function drawSegment(x, y, dx, dy, head, color, wob) {
+    const nx = -dy, ny = dx;   // perpendicular to the direction of travel
+    ctx.strokeStyle = color; ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    for (const s of [-1, 1]) {
+      const w = Math.sin(wob + s * 1.6) * 2.6;
+      ctx.moveTo(x + nx * s * 5, y + ny * s * 5);
+      ctx.lineTo(x + nx * s * 9 + dx * w, y + ny * s * 9 + dy * w);
+    }
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(x, y, 6.6, 0, TAU); ctx.fill();
+    if (head) {
+      ctx.strokeStyle = color; ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      for (const s of [-1, 1]) {
+        ctx.moveTo(x + dx * 5 + nx * s * 2, y + dy * 5 + ny * s * 2);
+        ctx.lineTo(x + dx * 10 + nx * s * 5, y + dy * 10 + ny * s * 5);
+      }
+      ctx.stroke();
+      for (const s of [-1, 1]) {
+        const ex = x + dx * 2.6 + nx * s * 2.6, ey = y + dy * 2.6 + ny * s * 2.6;
+        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ex, ey, 2, 0, TAU); ctx.fill();
+        ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(ex + dx * 0.8, ey + dy * 0.8, 1.1, 0, TAU); ctx.fill();
+      }
+    } else {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.beginPath(); ctx.arc(x - dx * 1.4, y - dy * 1.4, 3.4, 0, TAU); ctx.fill();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+      ctx.beginPath(); ctx.arc(x - 2, y - 2.6, 1.5, 0, TAU); ctx.fill();
+    }
+  }
+  function drawSpider(s) {
+    const leg = Math.sin(s.t * 0.5) * 2;
+    ctx.strokeStyle = pal.spider; ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 4; i++) {
+        const oy = -3 + i * 2, w = (i % 2 ? leg : -leg);
+        ctx.moveTo(s.x + side * 4, s.y + oy * 0.5);
+        ctx.lineTo(s.x + side * 9, s.y + oy - 3 + w);
+        ctx.lineTo(s.x + side * 12, s.y + oy + 3 + w);
+      }
+    }
+    ctx.stroke();
+    ctx.fillStyle = pal.spider;
+    ctx.beginPath(); ctx.ellipse(s.x, s.y, 6, 4.6, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.fillRect(s.x - 3, s.y - 1.5, 2, 2); ctx.fillRect(s.x + 1, s.y - 1.5, 2, 2);
+  }
+  function drawFlea(f) {
+    const c = f.hp === 2 ? pal.flea : '#ffffff';
+    ctx.strokeStyle = c; ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    for (const side of [-1, 1]) {
+      ctx.moveTo(f.x + side * 3, f.y - 2); ctx.lineTo(f.x + side * 7, f.y - 7);
+      ctx.moveTo(f.x + side * 3, f.y + 2); ctx.lineTo(f.x + side * 7, f.y + 6 + Math.sin(frame * 0.8) * 1.5);
+    }
+    ctx.stroke();
+    ctx.fillStyle = c;
+    ctx.beginPath(); ctx.ellipse(f.x, f.y, 4, 6.5, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#111'; ctx.fillRect(f.x - 1, f.y + 3, 2, 2);
+  }
+  function drawScorpion(s) {
+    const d = Math.sign(s.vx), c = '#7dd3ff';
+    ctx.strokeStyle = c; ctx.fillStyle = c; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.ellipse(s.x, s.y + 1, 7, 3.6, 0, 0, TAU); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(s.x - d * 6, s.y);
+    ctx.quadraticCurveTo(s.x - d * 13, s.y - 3, s.x - d * 10, s.y - 8);
+    ctx.quadraticCurveTo(s.x - d * 6, s.y - 11, s.x - d * 3, s.y - 7);
+    ctx.stroke();
+    ctx.beginPath(); ctx.arc(s.x - d * 3, s.y - 7, 1.6, 0, TAU); ctx.fill();
+    ctx.beginPath();
+    for (const side of [-1, 1]) {
+      ctx.moveTo(s.x + d * 6, s.y + side * 1.5);
+      ctx.lineTo(s.x + d * 10, s.y + side * 4);
+      ctx.lineTo(s.x + d * 12, s.y + side * 2);
+    }
+    for (let i = -1; i <= 1; i++) {
+      const w = Math.sin(frame * 0.5 + i) * 1.4;
+      ctx.moveTo(s.x + i * 3, s.y + 3); ctx.lineTo(s.x + i * 3 + w, s.y + 7);
+    }
+    ctx.stroke();
+  }
+  function drawPlayer() {
+    ctx.fillStyle = INK;
+    ctx.beginPath();
+    ctx.moveTo(px, py - 8);
+    ctx.lineTo(px + 3, py - 3);
+    ctx.lineTo(px + 6, py + 2);
+    ctx.lineTo(px + 6, py + 7);
+    ctx.lineTo(px - 6, py + 7);
+    ctx.lineTo(px - 6, py + 2);
+    ctx.lineTo(px - 3, py - 3);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = pal.rim;
+    ctx.fillRect(px - 2, py - 1, 4, 4);
+    ctx.fillStyle = pal.cap;
+    ctx.fillRect(px - 6, py + 5, 3, 2); ctx.fillRect(px + 3, py + 5, 3, 2);
+  }
+  function drawLifeIcon(x, y) {
+    ctx.fillStyle = INK;
+    ctx.beginPath();
+    ctx.moveTo(x, y - 5); ctx.lineTo(x + 4, y + 1); ctx.lineTo(x + 4, y + 4); ctx.lineTo(x - 4, y + 4); ctx.lineTo(x - 4, y + 1);
+    ctx.closePath(); ctx.fill();
+  }
+
+  function draw() {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+    // a faint wash marks the strip of garden the player can move in
+    const g = ctx.createLinearGradient(0, ZT * CELL, 0, H);
+    g.addColorStop(0, 'rgba(140, 255, 90, 0)');
+    g.addColorStop(1, 'rgba(140, 255, 90, 0.06)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, ZT * CELL, W, H - ZT * CELL);
+
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, CELL, W, H - CELL); ctx.clip();
+
+    for (let y = 1; y < ROWS; y++) {
+      for (let x = 0; x < COLS; x++) {
+        const i = y * COLS + x;
+        if (mhp[i]) drawMushroom(x, y, mhp[i], mpo[i]);
+      }
+    }
+    if (scorpion) drawScorpion(scorpion);
+    if (flea) drawFlea(flea);
+    if (spider) drawSpider(spider);
+
+    for (const c of cents) {
+      for (let k = c.path.length - 1; k >= 0; k--) {
+        const s = segPos(c, k);
+        drawSegment(s.x, s.y, s.dx, s.dy, k === 0, k === 0 ? pal.head : pal.body, frame * 0.45 + k * 1.3);
+      }
+    }
+
+    if (bullet) {
+      ctx.fillStyle = pal.head;
+      ctx.fillRect(bullet.x - 1, bullet.y, 2, 8);
+    }
+    if (state === 'play' || (state === 'dying' && deathT > 100)) drawPlayer();
+
+    if (ring) {
+      ctx.strokeStyle = `rgba(243, 236, 220, ${Math.max(0, 1 - ring.r / 90)})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(ring.x, ring.y, ring.r, 0, TAU); ctx.stroke();
+    }
+    for (const p of particles) {
+      ctx.globalAlpha = Math.min(1, p.life / 12);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x - 1, p.y - 1, 2.5, 2.5);
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.font = '8px "Press Start 2P", monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const p of popups) {
+      ctx.globalAlpha = Math.min(1, p.life / 20);
+      ctx.fillStyle = INK;
+      ctx.fillText(p.text, p.x, p.y);
+    }
+    ctx.globalAlpha = 1;
+
+    if (bannerT > 0 && state === 'play') {
+      ctx.font = '12px "Press Start 2P", monospace';
+      ctx.fillStyle = pal.head;
+      ctx.globalAlpha = Math.min(1, bannerT / 25);
+      ctx.fillText(`WAVE ${wave}`, W / 2, H / 2 - 20);
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+
+    // HUD on the top row
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, CELL);
+    ctx.font = '10px "Press Start 2P", monospace';
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = pal.cap;
+    ctx.fillText(String(score).padStart(6, ' '), 6, 9);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = DIM;
+    ctx.fillText(`HI ${Math.max(hi, score)}`, W / 2, 9);
+    for (let i = 0; i < lives; i++) drawLifeIcon(W - 10 - i * 13, 8);
+
+    if (paused) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+      ctx.fillRect(0, CELL, W, H - CELL);
+    }
+  }
+
+  // ---------- main loop ----------
+  let last = performance.now(), acc = 0;
+  function loop(now) {
+    requestAnimationFrame(loop);
+    let dt = (now - last) / 1000;
+    last = now;
+    if (dt > 0.1) dt = 0.1;
+    if (!paused) {
+      acc += dt;
+      let n = 0;
+      while (acc >= 1 / 60 && n++ < 6) { update(); acc -= 1 / 60; }
+    }
+    draw();
+  }
+
+  document.getElementById('startBtn').addEventListener('click', newGame);
+  document.getElementById('againBtn').addEventListener('click', newGame);
+  document.getElementById('resumeBtn').addEventListener('click', togglePause);
+  pauseBtn.addEventListener('click', togglePause);
+  muteBtn.addEventListener('click', () => { initAudio(); setMuted(!muted); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && (state === 'play' || state === 'dying' || state === 'restore') && !paused) togglePause();
+  });
+
+  fit();
+  seedMushrooms();
+  spawnWave();
+  bannerT = 0;
+  showCard(titleCard);
+  if (document.fonts && document.fonts.load) document.fonts.load('10px "Press Start 2P"').catch(() => {});
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
